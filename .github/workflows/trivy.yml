@@ -1,0 +1,64 @@
+name: Trivy
+
+on:
+  workflow_call:
+    inputs:
+      image-ref:
+        description: "Image to scan (e.g. ghcr.io/owner/repo:sha)"
+        required: true
+        type: string
+      severity:
+        description: "Severities to check"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
+      exit-code:
+        description: "Exit code when vulnerabilities are found (1 = fail pipeline)"
+        required: false
+        type: string
+        default: "1"
+
+  # Optional: allow running manually
+  workflow_dispatch:
+    inputs:
+      image-ref:
+        description: "Image to scan"
+        required: true
+        type: string
+
+jobs:
+  scan:
+    name: Trivy Image Scan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Run Trivy vulnerability scanner (table)
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ${{ inputs.image-ref }}
+          format: 'table'
+          exit-code: ${{ inputs.exit-code }}
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: ${{ inputs.severity }}
+
+      - name: Run Trivy vulnerability scanner (SARIF)
+        if: always()
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ${{ inputs.image-ref }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: ${{ inputs.severity }}
+
+      - name: Upload Trivy SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy'
