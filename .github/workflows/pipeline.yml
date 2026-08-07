@@ -113,7 +113,7 @@ jobs:
       id-token: write
 
   # =================================================
-  # Stage 7: SLSA Provenance Attestation (at build)
+  # Stage 7: SLSA Provenance Attestation
   # =================================================
   slsa:
     name: "7. SLSA Attestation"
@@ -175,14 +175,13 @@ jobs:
         run: |
           IMAGE_REF="${{ needs.docker.outputs.image-ref }}"
           DIGEST_RAW="${{ needs.docker.outputs.image-digest }}"
+          IMAGE_NAME="${{ needs.docker.outputs.image-name }}"
 
-          # Prefer OCI reference with digest for verification
           if [ -n "$DIGEST_RAW" ]; then
             if echo "$DIGEST_RAW" | grep -q '@'; then
               OCI_REF="oci://${DIGEST_RAW}"
             else
-              NAME=$(echo "${{ needs.docker.outputs.image-name }}" | tr '[:upper:]' '[:lower:]')
-              OCI_REF="oci://${NAME}@${DIGEST_RAW}"
+              OCI_REF="oci://${IMAGE_NAME}@${DIGEST_RAW}"
             fi
           else
             OCI_REF="oci://${IMAGE_REF}"
@@ -208,8 +207,8 @@ jobs:
       - name: Deploy finished
         run: |
           echo "Pipeline completed successfully"
-          echo "• CodeQL     → Security → Code scanning"
-          echo "• Trivy      → Security → Code scanning"
-          echo "• Cosign     → signature verified"
-          echo "• SLSA       → provenance attestation verified"
+          echo "• CodeQL  → Security → Code scanning"
+          echo "• Trivy   → Security → Code scanning"
+          echo "• Cosign  → signature verified"
+          echo "• SLSA    → provenance attestation verified"
           echo "• Deploy allowed only after successful verification"

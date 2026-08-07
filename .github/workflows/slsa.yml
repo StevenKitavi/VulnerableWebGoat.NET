@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       image-digest:
-        description: "Digest in form sha256:hex (or full repo@sha256:hex)"
+        description: "Digest (sha256:... or registry/repo@sha256:...)"
         required: true
         type: string
 
@@ -24,23 +24,43 @@ jobs:
       packages: write
 
     steps:
-      - name: Normalize digest
-        id: digest
+      - name: Validate and normalize inputs
+        id: prep
         run: |
+          NAME="${{ inputs.image-name }}"
           RAW="${{ inputs.image-digest }}"
-          # Accept either sha256:abc or ghcr.io/repo@sha256:abc
+
+          echo "Received image-name: '$NAME'"
+          echo "Received image-digest: '$RAW'"
+
+          if [ -z "$NAME" ]; then
+            echo "❌ image-name is empty. Ensure dotnet.yml outputs image-name."
+            exit 1
+          fi
+
+          if [ -z "$RAW" ]; then
+            echo "❌ image-digest is empty. Image must be pushed first."
+            exit 1
+          fi
+
+          # Normalize digest to sha256:hex
           if echo "$RAW" | grep -q '@'; then
             DIGEST="${RAW##*@}"
           else
             DIGEST="$RAW"
           fi
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
-          echo "Using digest: $DIGEST"
-          echo "Using subject-name: ${{ inputs.image-name }}"
+
+          # subject-name must NOT include a tag
+          NAME="${NAME%%:*}"
+
+          echo "subject-name=$NAME" >> $GITHUB_OUTPUT
+          echo "subject-digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "Using subject-name=$NAME"
+          echo "Using subject-digest=$DIGEST"
 
       - name: Attest build provenance (SLSA)
         uses: actions/attest-build-provenance@v3
         with:
-          subject-name: ${{ inputs.image-name }}
-          subject-digest: ${{ steps.digest.outputs.digest }}
+          subject-name: ${{ steps.prep.outputs.subject-name }}
+          subject-digest: ${{ steps.prep.outputs.subject-digest }}
           push-to-registry: true
