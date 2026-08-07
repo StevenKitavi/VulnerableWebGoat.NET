@@ -78,7 +78,7 @@ jobs:
         env:
           SSH_AUTH_SOCK: ${{ env.SSH_AUTH_SOCK }}
         run: |
-          ansible-playbook -i inventory.ini Infrastructure/Ansible/fail2ban.yml
+          ansible-playbook -i inventory.ini .github/ansible/fail2ban.yml
 
       - name: Cleanup SSH key
         if: always()

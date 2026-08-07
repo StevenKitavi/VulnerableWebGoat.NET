@@ -237,14 +237,26 @@ jobs:
           echo "Verifying SLSA attestation for: $OCI_REF"
           gh attestation verify "$OCI_REF" --repo "${{ github.repository }}"
           echo "✅ SLSA / artifact attestation verified"
-
+  # =================================================
+  # Stage 9a: Infrastructure Hardening & Audit
+  # =================================================
+  infrastructure-hardening-and-audit:
+    name: "9a. Infrastructure-Hardening-and-Audit"
+    needs: [trivy, verify, syft]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/infrastructure-hardening.yml
+    secrets:
+      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      PASSPHRASE: ${{ secrets.PASSPHRASE }}          
   # =================================================
   # Stage 9: Deploy
   # =================================================
   deploy:
     name: "9. Deploy"
     runs-on: ubuntu-latest
-    needs: [trivy, verify, syft]
+    needs: [trivy, verify, syft, infrastructure-hardening-and-audit]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     environment: production
     steps:
