@@ -72,7 +72,7 @@ jobs:
       packages: read
 
   # =================================================
-  # Stage 4: Docker Build
+  # Stage 4: Docker Build & Push
   # =================================================
   docker:
     name: "4. Docker Build"
@@ -98,12 +98,27 @@ jobs:
       security-events: write
 
   # =================================================
-  # Stage 6: Deploy (only on master/main)
+  # Stage 6: Cosign Sign (keyless)
+  # =================================================
+  cosign:
+    name: "6. Cosign Sign"
+    needs: docker
+    uses: ./.github/workflows/cosign.yml
+    with:
+      image-ref: ${{ needs.docker.outputs.image-ref }}
+      image-digest: ${{ needs.docker.outputs.image-digest }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+  # =================================================
+  # Stage 7: Deploy (only on master/main)
   # =================================================
   deploy:
-    name: "6. Deploy"
+    name: "7. Deploy"
     runs-on: ubuntu-latest
-    needs: [trivy]
+    needs: [trivy, cosign]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     environment: production
     steps:
@@ -112,4 +127,4 @@ jobs:
           echo "Pipeline completed successfully"
           echo "• CodeQL  → Security → Code scanning"
           echo "• Trivy   → Security → Code scanning"
-          echo "• Docker image artifact was scanned"
+          echo "• Image signed with Cosign (keyless)"

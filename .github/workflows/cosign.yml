@@ -1,0 +1,70 @@
+name: Cosign
+
+on:
+  workflow_call:
+    inputs:
+      image-ref:
+        description: "Image reference to sign (e.g. ghcr.io/owner/repo:tag)"
+        required: true
+        type: string
+      image-digest:
+        description: "Image digest (ghcr.io/owner/repo@sha256:...)"
+        required: false
+        type: string
+        default: ""
+
+  workflow_dispatch:
+    inputs:
+      image-ref:
+        description: "Image reference to sign"
+        required: true
+        type: string
+      image-digest:
+        description: "Image digest (optional)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  sign:
+    name: Sign Image (keyless)
+    runs-on: ubuntu-24.04
+    # Only sign on main/master (image must exist in registry)
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write          # required for Cosign keyless (OIDC)
+
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign image with Cosign (keyless)
+        run: |
+          if [ -n "${{ inputs.image-digest }}" ]; then
+            echo "Signing by digest: ${{ inputs.image-digest }}"
+            cosign sign --yes "${{ inputs.image-digest }}"
+          else
+            echo "Signing by tag: ${{ inputs.image-ref }}"
+            cosign sign --yes "${{ inputs.image-ref }}"
+          fi
+
+      - name: Verify signature
+        run: |
+          TARGET="${{ inputs.image-digest }}"
+          if [ -z "$TARGET" ]; then
+            TARGET="${{ inputs.image-ref }}"
+          fi
+
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/.github/workflows/" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "$TARGET"
