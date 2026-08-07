@@ -1,0 +1,88 @@
+name: Infrastructure-Hardening
+
+on:
+  workflow_call:
+    secrets:
+      DEPLOYMENT_SERVER:
+        description: "Server IP or hostname"
+        required: true
+      DEPLOY_USER:
+        description: "SSH user"
+        required: true
+      DEPLOY_SSH_KEY:
+        description: "Private SSH key for the server"
+        required: true
+      PASSPHRASE:
+        description: "Passphrase for the private SSH key"
+        required: true
+
+  workflow_dispatch:
+
+jobs:
+  harden:
+    name: Fail2ban hardening
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key with passphrase
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_PASSPHRASE: ${{ secrets.PASSPHRASE }}
+          DEPLOY_HOST: ${{ secrets.DEPLOYMENT_SERVER }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          # Write private key (preserve newlines)
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+          # Start ssh-agent and add key using passphrase
+          eval "$(ssh-agent -s)"
+          echo "$SSH_PASSPHRASE" | SSH_ASKPASS_REQUIRE=force setsid -w ssh-add ~/.ssh/id_rsa
+
+          # Fallback if setsid/askpass path fails on runner
+          if ! ssh-add -l >/dev/null 2>&1; then
+            apt-get update -qq && apt-get install -y -qq expect >/dev/null
+            expect << EOF
+          spawn ssh-add $HOME/.ssh/id_rsa
+          expect "Enter passphrase"
+          send "$SSH_PASSPHRASE\r"
+          expect eof
+          EOF
+          fi
+
+          ssh-add -l
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Persist agent for later steps
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+
+      - name: Install Ansible
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ansible
+
+      - name: Create inventory
+        run: |
+          echo "[prod]" > inventory.ini
+          echo "${{ secrets.DEPLOYMENT_SERVER }} ansible_user=${{ secrets.DEPLOY_USER }} ansible_ssh_private_key_file=~/.ssh/id_rsa ansible_python_interpreter=/usr/bin/python3" >> inventory.ini
+          cat inventory.ini
+
+      - name: Run Fail2ban playbook
+        env:
+          SSH_AUTH_SOCK: ${{ env.SSH_AUTH_SOCK }}
+        run: |
+          ansible-playbook -i inventory.ini Infrastructure/Ansible/fail2ban.yml
+
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          ssh-add -D 2>/dev/null || true
+          rm -f ~/.ssh/id_rsa
+          eval "$(ssh-agent -k)" 2>/dev/null || true
