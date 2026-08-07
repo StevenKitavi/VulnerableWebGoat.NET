@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       image-ref:
-        description: "Image to scan (e.g. ghcr.io/owner/repo:sha)"
+        description: "Image to scan"
         required: true
         type: string
       severity:
@@ -13,12 +13,11 @@ on:
         type: string
         default: "CRITICAL,HIGH"
       exit-code:
-        description: "Exit code when vulnerabilities are found (1 = fail pipeline)"
+        description: "Exit code when vulnerabilities are found"
         required: false
         type: string
         default: "1"
 
-  # Optional: allow running manually
   workflow_dispatch:
     inputs:
       image-ref:
@@ -36,7 +35,7 @@ jobs:
 
     steps:
       - name: Run Trivy vulnerability scanner (table)
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ inputs.image-ref }}
           format: 'table'
@@ -47,7 +46,7 @@ jobs:
 
       - name: Run Trivy vulnerability scanner (SARIF)
         if: always()
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ inputs.image-ref }}
           format: 'sarif'
