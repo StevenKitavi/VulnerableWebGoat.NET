@@ -241,15 +241,15 @@ jobs:
   # Stage 9a: Infrastructure Hardening & Audit
   # =================================================
   infrastructure-hardening-and-audit:
-    name: "9a. Infrastructure-Hardening-and-Audit"
+    name: "Infrastructure-Hardening"
     needs: [trivy, verify, syft]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/infrastructure-hardening-audit.yml
+    uses: ./.github/workflows/infrastructure-hardening.yml
     secrets:
       DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      PASSPHRASE: ${{ secrets.PASSPHRASE }}          
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KsEY }}
+      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}        
   # =================================================
   # Stage 9: Deploy
   # =================================================

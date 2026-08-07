@@ -10,10 +10,7 @@ on:
         description: "SSH user"
         required: true
       DEPLOY_SSH_KEY:
-        description: "Private SSH key for the server"
-        required: true
-      PASSPHRASE:
-        description: "Passphrase for the private SSH key"
+        description: "Private SSH key (no passphrase)"
         required: true
       CHEF_LICENSE_KEY:
         description: "Chef license key for InSpec"
@@ -26,46 +23,22 @@ jobs:
     name: Ansible + InSpec hardening
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    # Match GitLab allow_failure: true — pipeline continues if hardening/audit fails
     continue-on-error: true
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---------- SSH (passphrase-protected key) ----------
-      - name: Setup SSH key with passphrase
-        env:
-          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          SSH_PASSPHRASE: ${{ secrets.PASSPHRASE }}
-          DEPLOY_HOST: ${{ secrets.DEPLOYMENT_SERVER }}
+      # ---------- SSH (unencrypted deploy key) ----------
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Add host to known_hosts
         run: |
           mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          echo "$SSH_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-          eval "$(ssh-agent -s)"
-
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq expect openssh-client
-
-          expect << EOF
-          spawn ssh-add $HOME/.ssh/id_rsa
-          expect {
-            "Enter passphrase" {
-              send "$SSH_PASSPHRASE\r"
-              exp_continue
-            }
-            eof
-          }
-          EOF
-
-          ssh-add -l
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
-          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+          ssh-keyscan -H "${{ secrets.DEPLOYMENT_SERVER }}" >> ~/.ssh/known_hosts
 
       - name: Install Ansible
         run: |
@@ -76,7 +49,7 @@ jobs:
         run: |
           cat > inventory.ini << EOF
           [prod]
-          ${{ secrets.DEPLOYMENT_SERVER }} ansible_user=${{ secrets.DEPLOY_USER }} ansible_ssh_private_key_file=$HOME/.ssh/id_rsa ansible_python_interpreter=/usr/bin/python3
+          ${{ secrets.DEPLOYMENT_SERVER }} ansible_user=${{ secrets.DEPLOY_USER }} ansible_ssh_common_args='-o StrictHostKeyChecking=yes' ansible_python_interpreter=/usr/bin/python3
           EOF
           cat inventory.ini
 
@@ -94,7 +67,6 @@ jobs:
           if [ -f .github/ansible/ansible-hardening.yml ]; then
             ansible-playbook -i inventory.ini .github/ansible/ansible-hardening.yml
           else
-            # Minimal playbook using the collection if custom file is missing
             cat > /tmp/os-hardening.yml << 'PLAY'
           ---
           - name: Apply dev-sec OS hardening
@@ -115,16 +87,14 @@ jobs:
         run: |
           curl -fsSL https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
           inspec version
-          export CHEF_LICENSE_KEY="${CHEF_LICENSE_KEY}"
-          echo "CHEF_LICENSE_KEY is set: $([ -n \"$CHEF_LICENSE_KEY\" ] && echo yes || echo no)"
 
       - name: Run InSpec linux-baseline
         env:
           CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
+          # Export key from agent for InSpec -i if needed; prefer agent via SSH
           inspec exec https://github.com/dev-sec/linux-baseline \
             -t "ssh://${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOYMENT_SERVER }}" \
-            -i ~/.ssh/id_rsa \
             --chef-license accept \
             --reporter html:linux-baseline.html cli \
             || true
@@ -137,10 +107,3 @@ jobs:
           path: linux-baseline.html
           retention-days: 30
           if-no-files-found: warn
-
-      - name: Cleanup SSH
-        if: always()
-        run: |
-          ssh-add -D 2>/dev/null || true
-          rm -f ~/.ssh/id_rsa
-          eval "$(ssh-agent -k)" 2>/dev/null || true
