@@ -11,6 +11,16 @@ on:
 
 jobs:
   # =================================================
+  # Stage 0: Secret scanning ( Should be BEFORE build)
+  # =================================================
+  secrets:
+    name: "0. Secret Scan"
+    uses: ./.github/workflows/gitleaks.yml
+    secrets: inherit
+    permissions:
+      contents: read
+
+  # =================================================
   # Stage 1: Build
   # =================================================
   build:
