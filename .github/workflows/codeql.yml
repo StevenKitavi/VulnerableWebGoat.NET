@@ -1,6 +1,10 @@
 name: "CodeQL"
 
 on:
+  # Makes this workflow callable from other workflows (e.g. pipeline.yml)
+  workflow_call:
+
+  # Still allows it to run on its own if needed
   push:
     branches: [ "master", "main" ]
   pull_request:
@@ -37,7 +41,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: csharp
-          queries: security-and-quality   # Good default suite
+          queries: security-and-quality
 
       # 2. Build (creates the database)
       - name: Autobuild
@@ -54,5 +58,3 @@ jobs:
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:csharp"
-          # The action automatically uploads the SARIF
-          # results to the Code scanning / Vulnerabilities section
