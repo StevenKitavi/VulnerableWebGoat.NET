@@ -98,6 +98,23 @@ jobs:
       security-events: write
 
   # =================================================
+  # Stage 5b: Syft SBOM Generation
+  # =================================================
+  syft:
+    name: "5b. Syft SBOM"
+    needs: docker
+    uses: ./.github/workflows/syft.yml
+    with:
+      image-ref: ${{ needs.docker.outputs.image-ref }}
+      image-name: ${{ needs.docker.outputs.image-name }}
+      image-digest: ${{ needs.docker.outputs.image-digest }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write      
+
+  # =================================================
   # Stage 6: Cosign Sign (keyless)
   # =================================================
   cosign:
@@ -200,7 +217,7 @@ jobs:
   deploy:
     name: "9. Deploy"
     runs-on: ubuntu-latest
-    needs: [trivy, verify]
+    needs: [trivy, verify, syft]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     environment: production
     steps:
