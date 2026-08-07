@@ -38,14 +38,14 @@ jobs:
 
       # 1. Initialize CodeQL
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: csharp
           queries: security-and-quality
 
       # 2. Build (creates the database)
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
+        uses: github/codeql-action/autobuild@v4
 
       # If Autobuild fails, replace the step above with this:
       # - name: Manual build
@@ -55,6 +55,6 @@ jobs:
 
       # 3. Analyze + Upload SARIF to GitHub Security tab
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:csharp"

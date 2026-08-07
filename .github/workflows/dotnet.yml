@@ -1,14 +1,15 @@
 name: build .NET 8
 
 on:
-  # Makes this workflow callable from other workflows (e.g. pipeline.yml)
   workflow_call:
     outputs:
       image_tags:
         description: "Docker image tags that were built"
         value: ${{ jobs.build.outputs.tags }}
+      image_name:
+        description: "Main image name"
+        value: ${{ jobs.build.outputs.image_name }}
 
-  # Still allows it to run on its own
   push:
     branches: [ master ]
   pull_request:
@@ -17,18 +18,20 @@ on:
 
 jobs:
   build:
-    name: Build & Push Docker Image
+    name: Build, Push & Scan
     runs-on: ubuntu-latest
     permissions:
       packages: write
       contents: read
+      security-events: write      # needed for Trivy SARIF upload
 
     outputs:
       tags: ${{ steps.meta.outputs.tags }}
+      image_name: ${{ env.IMAGE_NAME }}
 
     env:
       IMAGE_NAME: ghcr.io/${{ github.repository }}
-      PUBLISH: ${{ github.ref == 'refs/heads/master' }}
+      PUBLISH: ${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' }}
 
     steps:
       - name: Checkout
@@ -36,13 +39,9 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        id: buildx
-        with:
-          install: true
-          version: latest
 
       - name: Login to GitHub Container Registry
-        if: ${{ env.PUBLISH == 'true' }}
+        if: env.PUBLISH == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -66,5 +65,34 @@ jobs:
           file: Dockerfile
           context: .
           push: ${{ env.PUBLISH == 'true' }}
+          load: ${{ env.PUBLISH != 'true' }}   # load locally when not pushing (for PRs)
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # ============================================
+      # Trivy Vulnerability Scan
+      # ============================================
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: '0'          # don't fail the pipeline (change to '1' if you want it to fail)
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy'
+
+      - name: Show Trivy table report
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.tags }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          ignore-unfixed: true
