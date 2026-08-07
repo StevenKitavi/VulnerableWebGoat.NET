@@ -13,6 +13,9 @@ on:
     - cron: '0 6 * * 1'          # Every Monday 06:00 UTC
   workflow_dispatch:              # Manual trigger
 
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze (csharp)
@@ -26,11 +29,16 @@ jobs:
       packages: read
 
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: |
             8.0.x
@@ -38,14 +46,14 @@ jobs:
 
       # 1. Initialize CodeQL
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           languages: csharp
           queries: security-and-quality
 
       # 2. Build (creates the database)
       - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+        uses: github/codeql-action/autobuild@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
 
       # If Autobuild fails, replace the step above with this:
       # - name: Manual build
@@ -55,6 +63,6 @@ jobs:
 
       # 3. Analyze + Upload SARIF to GitHub Security tab
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           category: "/language:csharp"
