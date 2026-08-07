@@ -113,17 +113,34 @@ jobs:
       id-token: write
 
   # =================================================
-  # Stage 7: Image Verification (Cosign verify)
+  # Stage 7: SLSA Provenance Attestation (at build)
+  # =================================================
+  slsa:
+    name: "7. SLSA Attestation"
+    needs: docker
+    uses: ./.github/workflows/slsa.yml
+    with:
+      image-name: ${{ needs.docker.outputs.image-name }}
+      image-digest: ${{ needs.docker.outputs.image-digest }}
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+      packages: write
+
+  # =================================================
+  # Stage 8: Image Verification (Cosign + SLSA)
   # =================================================
   verify:
-    name: "7. Image Verification"
+    name: "8. Image Verification"
     runs-on: ubuntu-24.04
-    needs: [docker, cosign]
+    needs: [docker, cosign, slsa]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: read
       id-token: write
+      attestations: read
 
     steps:
       - name: Install Cosign
@@ -136,27 +153,53 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify image signature
+      - name: Verify Cosign signature
         run: |
           TARGET="${{ needs.docker.outputs.image-digest }}"
           if [ -z "$TARGET" ]; then
             TARGET="${{ needs.docker.outputs.image-ref }}"
           fi
 
-          echo "Verifying signature for: $TARGET"
+          echo "Verifying Cosign signature for: $TARGET"
 
           cosign verify \
             --certificate-identity-regexp="https://github.com/${{ github.repository }}/.github/workflows/" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
             "$TARGET"
 
-          echo "✅ Image signature verified successfully"
+          echo "✅ Cosign signature verified"
+
+      - name: Verify SLSA / artifact attestation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IMAGE_REF="${{ needs.docker.outputs.image-ref }}"
+          DIGEST_RAW="${{ needs.docker.outputs.image-digest }}"
+
+          # Prefer OCI reference with digest for verification
+          if [ -n "$DIGEST_RAW" ]; then
+            if echo "$DIGEST_RAW" | grep -q '@'; then
+              OCI_REF="oci://${DIGEST_RAW}"
+            else
+              NAME=$(echo "${{ needs.docker.outputs.image-name }}" | tr '[:upper:]' '[:lower:]')
+              OCI_REF="oci://${NAME}@${DIGEST_RAW}"
+            fi
+          else
+            OCI_REF="oci://${IMAGE_REF}"
+          fi
+
+          echo "Verifying SLSA attestation for: $OCI_REF"
+
+          gh attestation verify "$OCI_REF" \
+            --repo "${{ github.repository }}"
+
+          echo "✅ SLSA / artifact attestation verified"
 
   # =================================================
-  # Stage 8: Deploy (depends on verification)
+  # Stage 9: Deploy (depends on verification)
   # =================================================
   deploy:
-    name: "8. Deploy"
+    name: "9. Deploy"
     runs-on: ubuntu-latest
     needs: [trivy, verify]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
@@ -165,7 +208,8 @@ jobs:
       - name: Deploy finished
         run: |
           echo "Pipeline completed successfully"
-          echo "• CodeQL   → Security → Code scanning"
-          echo "• Trivy    → Security → Code scanning"
-          echo "• Image signed + verified with Cosign (keyless)"
+          echo "• CodeQL     → Security → Code scanning"
+          echo "• Trivy      → Security → Code scanning"
+          echo "• Cosign     → signature verified"
+          echo "• SLSA       → provenance attestation verified"
           echo "• Deploy allowed only after successful verification"
