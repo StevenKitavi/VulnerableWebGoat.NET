@@ -244,7 +244,7 @@ jobs:
     name: "9a. Infrastructure-Hardening-and-Audit"
     needs: [trivy, verify, syft]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/infrastructure-hardening.yml
+    uses: ./.github/workflows/infrastructure-hardening-audit.yml
     secrets:
       DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
