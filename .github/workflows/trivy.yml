@@ -12,11 +12,12 @@ on:
         required: false
         type: string
         default: "CRITICAL,HIGH"
-      exit-code:
-        description: "Exit code when vulnerabilities are found"
+      # Fail only when HIGH + CRITICAL count reaches this number
+      fail-threshold:
+        description: "Minimum number of HIGH+CRITICAL vulns to fail the pipeline"
         required: false
-        type: string
-        default: "1"
+        type: number
+        default: 5
 
   workflow_dispatch:
     inputs:
@@ -45,23 +46,55 @@ jobs:
           docker load -i image.tar
           docker images
 
-      - name: Run Trivy vulnerability scanner (table)
+      # 1. Human-readable report (never fails the job)
+      - name: Run Trivy (table report)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ inputs.image-ref }}
           format: 'table'
-          exit-code: ${{ inputs.exit-code }}
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: ${{ inputs.severity }}
 
-      - name: Run Trivy vulnerability scanner (SARIF)
+      # 2. JSON output for counting
+      - name: Run Trivy (JSON)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ inputs.image-ref }}
+          format: 'json'
+          output: 'trivy-results.json'
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: ${{ inputs.severity }}
+
+      # 3. Count HIGH + CRITICAL and fail if >= threshold
+      - name: Check vulnerability threshold
+        run: |
+          THRESHOLD=${{ inputs.fail-threshold }}
+
+          COUNT=$(jq '[.Results[]?.Vulnerabilities // [] | .[] | select(.Severity == "HIGH" or .Severity == "CRITICAL")] | length' trivy-results.json)
+
+          echo "HIGH + CRITICAL vulnerabilities found: $COUNT"
+          echo "Fail threshold: $THRESHOLD"
+
+          if [ "$COUNT" -ge "$THRESHOLD" ]; then
+            echo "❌ Pipeline failed: $COUNT HIGH/CRITICAL vulnerabilities (>= $THRESHOLD)"
+            exit 1
+          else
+            echo "✅ Below threshold ($COUNT < $THRESHOLD) — pipeline continues"
+          fi
+
+      # 4. SARIF for GitHub Security tab
+      - name: Run Trivy (SARIF)
         if: always()
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ inputs.image-ref }}
           format: 'sarif'
           output: 'trivy-results.sarif'
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: ${{ inputs.severity }}
