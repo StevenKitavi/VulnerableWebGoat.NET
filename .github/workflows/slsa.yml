@@ -58,6 +58,14 @@ jobs:
           echo "Using subject-name=$NAME"
           echo "Using subject-digest=$DIGEST"
 
+      # Required so push-to-registry can write the attestation to GHCR
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Attest build provenance (SLSA)
         uses: actions/attest-build-provenance@v3
         with:
