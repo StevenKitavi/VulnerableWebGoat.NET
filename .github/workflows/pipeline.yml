@@ -113,18 +113,59 @@ jobs:
       id-token: write
 
   # =================================================
-  # Stage 7: Deploy (only on master/main)
+  # Stage 7: Image Verification (Cosign verify)
+  # =================================================
+  verify:
+    name: "7. Image Verification"
+    runs-on: ubuntu-24.04
+    needs: [docker, cosign]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify image signature
+        run: |
+          TARGET="${{ needs.docker.outputs.image-digest }}"
+          if [ -z "$TARGET" ]; then
+            TARGET="${{ needs.docker.outputs.image-ref }}"
+          fi
+
+          echo "Verifying signature for: $TARGET"
+
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/.github/workflows/" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "$TARGET"
+
+          echo "✅ Image signature verified successfully"
+
+  # =================================================
+  # Stage 8: Deploy (depends on verification)
   # =================================================
   deploy:
-    name: "7. Deploy"
+    name: "8. Deploy"
     runs-on: ubuntu-latest
-    needs: [trivy, cosign]
+    needs: [trivy, verify]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     environment: production
     steps:
       - name: Deploy finished
         run: |
           echo "Pipeline completed successfully"
-          echo "• CodeQL  → Security → Code scanning"
-          echo "• Trivy   → Security → Code scanning"
-          echo "• Image signed with Cosign (keyless)"
+          echo "• CodeQL   → Security → Code scanning"
+          echo "• Trivy    → Security → Code scanning"
+          echo "• Image signed + verified with Cosign (keyless)"
+          echo "• Deploy allowed only after successful verification"
