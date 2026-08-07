@@ -48,6 +48,7 @@ jobs:
     name: "1b. Grype SCA"
     needs: build
     uses: ./.github/workflows/grype.yml
+    secrets: inherit
     with:
       path: "."
       severity-cutoff: "high"
@@ -94,6 +95,7 @@ jobs:
     name: "3. CodeQL Analysis"
     needs: build
     uses: ./.github/workflows/codeql.yml
+    secrets: inherit
     permissions:
       security-events: write
       contents: read
@@ -101,11 +103,12 @@ jobs:
       packages: read
 
   # =================================================
-  # Stage: OpenSSF Scorecard (optional parallel)
+  # Stage: OpenSSF Scorecard
   # =================================================
   scorecard:
     name: "OpenSSF Scorecard"
     uses: ./.github/workflows/scorecard.yml
+    secrets: inherit
     permissions:
       security-events: write
       id-token: write
@@ -119,6 +122,7 @@ jobs:
     name: "4. Docker Build"
     needs: [build, test, codeql, grype]
     uses: ./.github/workflows/dotnet.yml
+    secrets: inherit
     permissions:
       contents: read
       packages: write
@@ -130,6 +134,7 @@ jobs:
     name: "5. Trivy Image Scan"
     needs: docker
     uses: ./.github/workflows/trivy.yml
+    secrets: inherit
     with:
       image-ref: ${{ needs.docker.outputs.image-ref }}
       severity: "CRITICAL,HIGH"
@@ -139,12 +144,13 @@ jobs:
       security-events: write
 
   # =================================================
-  # Stage 5b: Syft SBOM Generation
+  # Stage 5b: Syft SBOM
   # =================================================
   syft:
     name: "5b. Syft SBOM"
     needs: docker
     uses: ./.github/workflows/syft.yml
+    secrets: inherit
     with:
       image-ref: ${{ needs.docker.outputs.image-ref }}
       image-name: ${{ needs.docker.outputs.image-name }}
@@ -156,12 +162,13 @@ jobs:
       attestations: write
 
   # =================================================
-  # Stage 6: Cosign Sign (keyless)
+  # Stage 6: Cosign Sign
   # =================================================
   cosign:
     name: "6. Cosign Sign"
     needs: docker
     uses: ./.github/workflows/cosign.yml
+    secrets: inherit
     with:
       image-ref: ${{ needs.docker.outputs.image-ref }}
       image-digest: ${{ needs.docker.outputs.image-digest }}
@@ -171,12 +178,13 @@ jobs:
       id-token: write
 
   # =================================================
-  # Stage 7: SLSA Provenance Attestation
+  # Stage 7: SLSA Attestation
   # =================================================
   slsa:
     name: "7. SLSA Attestation"
     needs: docker
     uses: ./.github/workflows/slsa.yml
+    secrets: inherit
     with:
       image-name: ${{ needs.docker.outputs.image-name }}
       image-digest: ${{ needs.docker.outputs.image-digest }}
@@ -187,7 +195,7 @@ jobs:
       packages: write
 
   # =================================================
-  # Stage 8: Image Verification (Cosign + SLSA)
+  # Stage 8: Image Verification
   # =================================================
   verify:
     name: "8. Image Verification"
@@ -258,7 +266,7 @@ jobs:
           echo "✅ SLSA / artifact attestation verified"
 
   # =================================================
-  # Stage 9: Deploy (depends on verification)
+  # Stage 9: Deploy
   # =================================================
   deploy:
     name: "9. Deploy"
@@ -275,10 +283,9 @@ jobs:
       - name: Deploy finished
         run: |
           echo "Pipeline completed successfully"
-          echo "• Grype   → SCA (dependencies)"
-          echo "• CodeQL  → Security → Code scanning"
-          echo "• Trivy   → Security → Code scanning"
+          echo "• Grype   → SCA"
+          echo "• CodeQL  → Code scanning"
+          echo "• Trivy   → Image scan"
           echo "• Syft    → SBOM"
-          echo "• Cosign  → signature verified"
-          echo "• SLSA    → provenance attestation verified"
-          echo "• Deploy allowed only after successful verification"
+          echo "• Cosign  → Signature verified"
+          echo "• SLSA    → Provenance verified"
