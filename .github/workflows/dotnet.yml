@@ -37,3 +37,14 @@ jobs:
 
       - name: Build an image from Dockerfile
         run: docker build -t ${{ steps.meta.outputs.image }} .
+
+      # Save image so the Trivy job can load it
+      - name: Save Docker image
+        run: docker save ${{ steps.meta.outputs.image }} -o image.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: image.tar
+          retention-days: 1
