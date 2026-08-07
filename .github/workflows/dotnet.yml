@@ -23,17 +23,15 @@ jobs:
     outputs:
       image-ref: ${{ steps.meta.outputs.image }}
 
-    env:
-      IMAGE_NAME: ghcr.io/${{ github.repository }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set image name
+      - name: Set image name (lowercase)
         id: meta
         run: |
-          IMAGE="${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE_NAME=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="${IMAGE_NAME}:${{ github.sha }}"
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
           echo "Building $IMAGE"
 
