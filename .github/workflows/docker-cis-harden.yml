@@ -113,7 +113,7 @@ jobs:
         env:
           CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
-          inspec exec /tmp/compliance-as-code \
+          inspec exec /tmp/compliance-as-code/docker \
             -t "ssh://${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOYMENT_SERVER }}" \
             --chef-license accept \
             --reporter html:cis-docker-results.html cli \
