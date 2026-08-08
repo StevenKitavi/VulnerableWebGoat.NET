@@ -3,12 +3,6 @@ name: Docker Install (Pure / Non-CIS)
 on:
   workflow_dispatch:
     inputs:
-      DEPLOYMENT_SERVER:
-        description: "Server IP or hostname"
-        required: true
-      DEPLOY_USER:
-        description: "SSH user"
-        required: true
       RUN_INSPEC:
         description: "Run InSpec CIS scan after install (true/false)"
         required: false
@@ -16,20 +10,16 @@ on:
 
   workflow_call:
     inputs:
-      DEPLOYMENT_SERVER:
-        description: "Server IP or hostname"
-        required: true
-        type: string
-      DEPLOY_USER:
-        description: "SSH user"
-        required: true
-        type: string
       RUN_INSPEC:
         description: "Run InSpec CIS scan after install (true/false)"
         required: false
         type: string
         default: "true"
     secrets:
+      DEPLOYMENT_SERVER:
+        required: true
+      DEPLOY_USER:
+        required: true
       DEPLOY_SSH_KEY:
         required: true
       CHEF_LICENSE_KEY:
@@ -39,8 +29,8 @@ jobs:
   install-docker:
     runs-on: ubuntu-latest
     env:
-      DEPLOYMENT_SERVER: ${{ inputs.DEPLOYMENT_SERVER || github.event.inputs.DEPLOYMENT_SERVER }}
-      DEPLOY_USER: ${{ inputs.DEPLOY_USER || github.event.inputs.DEPLOY_USER }}
+      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       RUN_INSPEC: ${{ inputs.RUN_INSPEC || github.event.inputs.RUN_INSPEC || 'true' }}
       CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
 
@@ -75,7 +65,6 @@ jobs:
             --private-key ~/.ssh/deploy_key \
             -e "docker_users=['${DEPLOY_USER}']"
 
-      # ---------- InSpec verification (baseline / non-CIS state) ----------
       - name: Install InSpec
         if: env.RUN_INSPEC == 'true'
         run: |

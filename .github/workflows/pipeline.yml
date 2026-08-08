@@ -261,11 +261,9 @@ jobs:
     needs: [infrastructure-hardening]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/docker-install.yml
-    with:
+    secrets:
       DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      RUN_INSPEC: "true"
-    secrets:
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
 
@@ -278,12 +276,9 @@ jobs:
     needs: [docker-install]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/docker-cis-harden.yml
-    with:
+    secrets:
       DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      ENABLE_USERNS_REMAP: "false"
-      RUN_INSPEC: "true"
-    secrets:
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
 
