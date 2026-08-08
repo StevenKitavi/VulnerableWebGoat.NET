@@ -281,6 +281,7 @@ jobs:
           gh attestation verify "$OCI_REF" --repo "${{ github.repository }}"
           echo "✅ SLSA / artifact attestation verified"
 
+          
   # =================================================
   # Stage 9: Deploy
   # Waits for image path + full infra path
