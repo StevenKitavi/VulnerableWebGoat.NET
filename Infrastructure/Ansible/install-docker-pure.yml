@@ -7,7 +7,7 @@
   gather_facts: true
 
   vars:
-    docker_users: []          # overridden by -e in the workflow
+    docker_users: []
     docker_packages:
       - docker-ce
       - docker-ce-cli
@@ -19,7 +19,7 @@
     - name: Fail if unsupported OS family
       ansible.builtin.fail:
         msg: "Supported OS families: Debian, RedHat"
-      when: ansible_os_family not in ['Debian', 'RedHat']
+      when: ansible_facts['os_family'] not in ['Debian', 'RedHat']
 
     # ---------- Debian / Ubuntu ----------
     - name: Debian/Ubuntu - Install prerequisites
@@ -32,39 +32,39 @@
           - apt-transport-https
         state: present
         update_cache: true
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Debian/Ubuntu - Create keyrings directory
       ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         mode: '0755'
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Debian/Ubuntu - Add Docker GPG key
       ansible.builtin.get_url:
-        url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+        url: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg"
         dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Debian/Ubuntu - Add Docker repository
       ansible.builtin.apt_repository:
         repo: >-
-          deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }}
+          deb [arch={{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else ansible_facts['architecture'] }}
           signed-by=/etc/apt/keyrings/docker.asc]
-          https://download.docker.com/linux/{{ ansible_distribution | lower }}
-          {{ ansible_distribution_release }} stable
+          https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}
+          {{ ansible_facts['distribution_release'] }} stable
         state: present
         filename: docker
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Debian/Ubuntu - Install Docker packages
       ansible.builtin.apt:
         name: "{{ docker_packages }}"
         state: present
         update_cache: true
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
 
     # ---------- RHEL family ----------
     - name: RedHat - Install prerequisites
@@ -73,7 +73,7 @@
           - dnf-plugins-core
           - yum-utils
         state: present
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
 
     - name: RedHat - Remove conflicting packages
       ansible.builtin.dnf:
@@ -89,22 +89,22 @@
           - podman
           - runc
         state: absent
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
       ignore_errors: true
 
     - name: RedHat - Add Docker repository
       ansible.builtin.get_url:
-        url: "https://download.docker.com/linux/{{ 'rhel' if ansible_distribution == 'RedHat' else ansible_distribution | lower }}/docker-ce.repo"
+        url: "https://download.docker.com/linux/{{ 'rhel' if ansible_facts['distribution'] == 'RedHat' else ansible_facts['distribution'] | lower }}/docker-ce.repo"
         dest: /etc/yum.repos.d/docker-ce.repo
         mode: '0644'
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
 
     - name: RedHat - Install Docker packages
       ansible.builtin.dnf:
         name: "{{ docker_packages }}"
         state: present
         update_cache: true
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
 
     # ---------- Common ----------
     - name: Ensure docker group exists
@@ -112,13 +112,22 @@
         name: docker
         state: present
 
+    - name: Normalize docker_users to a list
+      ansible.builtin.set_fact:
+        docker_users_list: >-
+          {{
+            docker_users
+            if (docker_users is sequence and docker_users is not string)
+            else ([docker_users] if docker_users | default('') | length > 0 else [])
+          }}
+
     - name: Add users to docker group
       ansible.builtin.user:
         name: "{{ item }}"
         groups: docker
         append: true
-      loop: "{{ docker_users }}"
-      when: docker_users | length > 0
+      loop: "{{ docker_users_list }}"
+      when: docker_users_list | length > 0
 
     - name: Ensure /etc/docker directory exists (default empty config)
       ansible.builtin.file:
@@ -127,8 +136,6 @@
         owner: root
         group: root
         mode: '0755'
-
-    # Intentionally NO hardened daemon.json – pure defaults
 
     - name: Enable and start Docker
       ansible.builtin.service:

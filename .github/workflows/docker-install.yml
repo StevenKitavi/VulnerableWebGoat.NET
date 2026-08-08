@@ -82,7 +82,7 @@ jobs:
       - name: Install pure Docker environment
         run: |
           ansible-playbook -i inventory.ini Infrastructure/Ansible/install-docker-pure.yml \
-            -e "docker_users=['${{ secrets.DEPLOY_USER }}']"
+            -e "{\"docker_users\": [\"${{ secrets.DEPLOY_USER }}\"]}"
 
       - name: Install InSpec
         if: env.RUN_INSPEC == 'true'
@@ -104,10 +104,10 @@ jobs:
             || true
 
       - name: Upload InSpec report
-        if: always() && env.RUN_INSPEC == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: inspec-cis-docker-install
           path: cis-docker-install-results.html
           retention-days: 30
-          if-no-files-found: warn
+          if-no-files-found: ignore

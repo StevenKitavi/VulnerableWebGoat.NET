@@ -92,7 +92,7 @@ jobs:
       - name: Harden Docker to CIS controls
         run: |
           ansible-playbook -i inventory.ini Infrastructure/Ansible/harden-docker-cis.yml \
-            -e "trusted_docker_users=['${{ secrets.DEPLOY_USER }}']" \
+            -e "{\"trusted_docker_users\": [\"${{ secrets.DEPLOY_USER }}\"]}" \
             -e "enable_userns_remap=${ENABLE_USERNS_REMAP}"
 
       - name: Install InSpec
@@ -115,7 +115,10 @@ jobs:
             || true
 
       - name: Upload InSpec report
-        if: always() && env.RUN_INSPEC == 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: inspec-cis
+          name: inspec-cis-docker
+          path: cis-docker-results.html
+          retention-days: 30
+          if-no-files-found: ignore

@@ -1,26 +1,21 @@
 ---
 # harden-docker-cis.yml
 # Applies key CIS Docker Benchmark host + daemon controls
-# Run AFTER install-docker-pure.yml (or any working Docker install)
 - name: Harden Docker environment toward CIS compliance
   hosts: all
   become: true
   gather_facts: true
 
   vars:
-    # Set to true only if you understand the impact (breaks many existing containers)
     enable_userns_remap: false
-    # Trusted users allowed in the docker group (CIS 1.1.2 style control)
-    trusted_docker_users: []   # e.g. ["deploy"] – overridden by workflow -e
-
-    # Hardened daemon.json settings (common CIS recommendations)
+    trusted_docker_users: []
     docker_daemon_config:
-      icc: false                          # restrict inter-container traffic on default bridge
-      "log-level": "info"                 # logging level
-      "live-restore": true                # keep containers running across daemon restarts
-      "userland-proxy": false             # disable userland proxy
-      "no-new-privileges": true           # prevent privilege escalation by default
-      "storage-driver": "overlay2"        # avoid aufs
+      icc: false
+      "log-level": "info"
+      "live-restore": true
+      "userland-proxy": false
+      "no-new-privileges": true
+      "storage-driver": "overlay2"
       iptables: true
       "default-ulimits":
         nofile:
@@ -39,7 +34,6 @@
       changed_when: false
       failed_when: docker_check.rc != 0
 
-    # ---------- File / directory ownership & permissions (Section 3) ----------
     - name: Ensure /etc/docker ownership and permissions
       ansible.builtin.file:
         path: /etc/docker
@@ -80,18 +74,25 @@
         owner: root
         group: docker
         mode: '0660'
-      ignore_errors: true   # may not exist yet if daemon not fully up
+      ignore_errors: true
 
-    # ---------- Restrict docker group membership ----------
+    - name: Normalize trusted_docker_users to a list
+      ansible.builtin.set_fact:
+        trusted_docker_users_list: >-
+          {{
+            trusted_docker_users
+            if (trusted_docker_users is sequence and trusted_docker_users is not string)
+            else ([trusted_docker_users] if trusted_docker_users | default('') | length > 0 else [])
+          }}
+
     - name: Ensure only trusted users are in docker group
       ansible.builtin.user:
         name: "{{ item }}"
         groups: docker
         append: true
-      loop: "{{ trusted_docker_users }}"
-      when: trusted_docker_users | length > 0
+      loop: "{{ trusted_docker_users_list }}"
+      when: trusted_docker_users_list | length > 0
 
-    # ---------- Hardened daemon.json ----------
     - name: Merge userns-remap if enabled
       ansible.builtin.set_fact:
         docker_daemon_config: "{{ docker_daemon_config | combine({'userns-remap': 'default'}) }}"
@@ -106,18 +107,17 @@
         mode: '0644'
       notify: Restart Docker
 
-    # ---------- Auditd rules for Docker (Section 1) ----------
     - name: Install auditd (Debian/Ubuntu)
       ansible.builtin.package:
         name: auditd
         state: present
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Install audit (RHEL family)
       ansible.builtin.package:
         name: audit
         state: present
-      when: ansible_os_family == 'RedHat'
+      when: ansible_facts['os_family'] == 'RedHat'
 
     - name: Create Docker audit rules
       ansible.builtin.copy:
@@ -126,7 +126,6 @@
         group: root
         mode: '0640'
         content: |
-          # CIS Docker - audit key Docker binaries and paths
           -w /usr/bin/dockerd -k docker
           -w /usr/bin/docker -k docker
           -w /usr/bin/containerd -k docker
@@ -155,8 +154,7 @@
         state: started
         enabled: true
 
-    # ---------- Final verification ----------
-    - name: Reload systemd (in case unit files changed)
+    - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
 
