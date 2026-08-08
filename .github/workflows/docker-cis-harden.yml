@@ -1,0 +1,87 @@
+name: Docker CIS Harden / Patch
+
+on:
+  workflow_dispatch:
+    inputs:
+      DEPLOYMENT_SERVER:
+        description: "Server IP or hostname"
+        required: true
+      DEPLOY_USER:
+        description: "SSH user"
+        required: true
+      ENABLE_USERNS_REMAP:
+        description: "Enable userns-remap (true/false) – can break existing containers"
+        required: false
+        default: "false"
+      RUN_INSPEC:
+        description: "Run InSpec CIS scan after hardening (true/false)"
+        required: false
+        default: "true"
+
+jobs:
+  harden-docker:
+    runs-on: ubuntu-latest
+    env:
+      DEPLOYMENT_SERVER: ${{ github.event.inputs.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ github.event.inputs.DEPLOY_USER }}
+      ENABLE_USERNS_REMAP: ${{ github.event.inputs.ENABLE_USERNS_REMAP }}
+      RUN_INSPEC: ${{ github.event.inputs.RUN_INSPEC }}
+      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        run: |
+          pip install ansible-core
+          ansible-galaxy collection install community.general ansible.posix
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOYMENT_SERVER" >> ~/.ssh/known_hosts || true
+
+      - name: Harden Docker to CIS controls
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+        run: |
+          ansible-playbook Infrastructure/Ansible/harden-docker-cis.yml \
+            -i "${DEPLOYMENT_SERVER}," \
+            -u "${DEPLOY_USER}" \
+            --private-key ~/.ssh/deploy_key \
+            -e "trusted_docker_users=['${DEPLOY_USER}']" \
+            -e "enable_userns_remap=${ENABLE_USERNS_REMAP}"
+
+      # ---------- InSpec verification (post-harden) ----------
+      - name: Install InSpec
+        if: env.RUN_INSPEC == 'true'
+        run: |
+          curl -L https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
+
+      - name: Run CIS Docker InSpec profile
+        if: env.RUN_INSPEC == 'true'
+        env:
+          CHEF_LICENSE: accept-no-persist
+          CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
+        run: |
+          inspec exec https://github.com/StevenKitavi/compliance-as-code.git \
+            -t ssh://${DEPLOY_USER}@${DEPLOYMENT_SERVER} \
+            -i ~/.ssh/deploy_key \
+            --reporter cli json:cis-docker-results.json \
+            || true
+
+      - name: Upload InSpec results
+        if: env.RUN_INSPEC == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cis-docker-results
+          path: cis-docker-results.json
+          if-no-files-found: ignore
