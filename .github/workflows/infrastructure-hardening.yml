@@ -23,11 +23,25 @@ jobs:
     name: Ansible + InSpec hardening
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    environment: deployment
     continue-on-error: true
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Check deploy secrets are present
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOYMENT_SERVER }}
+          USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$KEY" ]; then
+            echo "❌ DEPLOYMENT_SERVER / DEPLOY_USER / DEPLOY_SSH_KEY is empty"
+            echo "Add them under Settings → Environments → deployment"
+            exit 1
+          fi
+          echo "✅ Deploy secrets present (key length ${#KEY})"
 
       # ---------- SSH (unencrypted deploy key) ----------
       - name: Setup SSH agent
@@ -92,7 +106,6 @@ jobs:
         env:
           CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
-          # Export key from agent for InSpec -i if needed; prefer agent via SSH
           inspec exec https://github.com/dev-sec/linux-baseline \
             -t "ssh://${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOYMENT_SERVER }}" \
             --chef-license accept \
