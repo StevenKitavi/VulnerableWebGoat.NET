@@ -92,27 +92,36 @@ jobs:
           curl -fsSL https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
           inspec version
 
-      - name: Clone InSpec profile
+      - name: Clone custom compliance profile
         if: env.RUN_INSPEC == 'true'
         run: |
           git clone --depth 1 https://github.com/StevenKitavi/compliance-as-code.git /tmp/compliance-as-code
 
-      - name: Run CIS Docker InSpec profile (post-install baseline)
+      - name: Run Docker InSpec profiles in parallel (post-install baseline)
         if: env.RUN_INSPEC == 'true'
         env:
           CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
-          inspec exec /tmp/compliance-as-code/docker \
+          cat > inspec-multiprofile.txt << EOF
+          /tmp/compliance-as-code/docker --reporter html:cis-docker-custom-results-preharden.html
+          https://github.com/dev-sec/cis-docker-benchmark.git --reporter html:cis-docker-benchmark-results-preharden.html json:cis-docker-benchmark-results-preharden.json
+          EOF
+          cat inspec-multiprofile.txt
+
+          inspec parallel exec multiprofile \
+            -o inspec-multiprofile.txt \
             -t "ssh://${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOYMENT_SERVER }}" \
             --chef-license accept \
-            --reporter html:cis-docker-install-results.html cli \
             || true
 
-      - name: Upload InSpec report
+      - name: Upload InSpec reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: inspec-cis-docker-install
-          path: cis-docker-install-results.html
+          name: inspec-docker-install-reports
+          path: |
+            cis-docker-custom-results-preharden.html
+            cis-docker-benchmark-results-preharden.html
+            cis-docker-benchmark-results-preharden.json
           retention-days: 30
           if-no-files-found: ignore
