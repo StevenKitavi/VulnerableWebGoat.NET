@@ -253,8 +253,7 @@ jobs:
       CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
 
   # =================================================
-  # Stage 9a-i: Docker Install (pure / non-CIS)
-  # After Linux InSpec baseline
+  # Stage 9a-i: Docker Install (Pure)
   # =================================================
   docker-install:
     name: "9a-i. Docker Install (Pure)"
@@ -269,7 +268,6 @@ jobs:
 
   # =================================================
   # Stage 9a-ii: Docker CIS Harden
-  # After pure Docker install
   # =================================================
   docker-cis-harden:
     name: "9a-ii. Docker CIS Harden"
