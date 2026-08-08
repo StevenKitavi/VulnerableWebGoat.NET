@@ -29,14 +29,32 @@ jobs:
   install-docker:
     runs-on: ubuntu-latest
     env:
-      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       RUN_INSPEC: ${{ inputs.RUN_INSPEC || github.event.inputs.RUN_INSPEC || 'true' }}
-      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate deploy secrets
+        env:
+          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$DEPLOYMENT_SERVER" ]; then
+            echo "::error::DEPLOYMENT_SERVER secret is empty"
+            exit 1
+          fi
+          if [ -z "$DEPLOY_USER" ]; then
+            echo "::error::DEPLOY_USER secret is empty"
+            exit 1
+          fi
+          if [ -z "$DEPLOY_SSH_KEY" ]; then
+            echo "::error::DEPLOY_SSH_KEY secret is empty"
+            exit 1
+          fi
+          echo "Target host: $DEPLOYMENT_SERVER"
+          echo "Target user: $DEPLOY_USER"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,20 +67,34 @@ jobs:
           ansible-galaxy collection install community.general ansible.posix
 
       - name: Setup SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOYMENT_SERVER" >> ~/.ssh/known_hosts || true
+          ssh-keyscan -H "$DEPLOYMENT_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Write Ansible inventory
+        env:
+          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          cat > /tmp/inventory.ini <<EOF
+          [targets]
+          ${DEPLOYMENT_SERVER} ansible_user=${DEPLOY_USER} ansible_ssh_private_key_file=~/.ssh/deploy_key ansible_python_interpreter=/usr/bin/python3
+          EOF
+          echo "Inventory:"
+          cat /tmp/inventory.ini
 
       - name: Install pure Docker environment
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          ansible-playbook Infrastructure/Ansible/install-docker-raw.yml \
-            -i "${DEPLOYMENT_SERVER}," \
-            -u "${DEPLOY_USER}" \
-            --private-key ~/.ssh/deploy_key \
+          ansible-playbook Infrastructure/Ansible/install-docker-pure.yml \
+            -i /tmp/inventory.ini \
             -e "docker_users=['${DEPLOY_USER}']"
 
       - name: Install InSpec
@@ -73,13 +105,25 @@ jobs:
       - name: Run CIS Docker InSpec profile (post-install baseline)
         if: env.RUN_INSPEC == 'true'
         env:
-          CHEF_LICENSE: accept-no-persist
+          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
+          # EULA acceptance only — do NOT pass a bad/empty license key
+          export CHEF_LICENSE=accept-no-persist
+
+          EXTRA_ARGS=()
+          if [ -n "${CHEF_LICENSE_KEY:-}" ] && [ "${#CHEF_LICENSE_KEY}" -ge 20 ]; then
+            EXTRA_ARGS+=(--chef-license-key "$CHEF_LICENSE_KEY")
+          else
+            echo "CHEF_LICENSE_KEY not set or invalid length — running without --chef-license-key"
+          fi
+
           inspec exec https://github.com/StevenKitavi/compliance-as-code.git \
-            -t ssh://${DEPLOY_USER}@${DEPLOYMENT_SERVER} \
+            -t "ssh://${DEPLOY_USER}@${DEPLOYMENT_SERVER}" \
             -i ~/.ssh/deploy_key \
             --reporter cli json:cis-docker-install-results.json \
+            "${EXTRA_ARGS[@]}" \
             || true
 
       - name: Upload InSpec results
