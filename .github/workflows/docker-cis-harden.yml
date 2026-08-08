@@ -26,17 +26,25 @@ on:
         default: "true"
     secrets:
       DEPLOYMENT_SERVER:
+        description: "Server IP or hostname"
         required: true
       DEPLOY_USER:
+        description: "SSH user"
         required: true
       DEPLOY_SSH_KEY:
+        description: "Private SSH key (no passphrase)"
         required: true
       CHEF_LICENSE_KEY:
+        description: "Chef license key for InSpec"
         required: false
 
 jobs:
   harden-docker:
+    name: Docker CIS Harden + InSpec
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    environment: deployment
+    continue-on-error: true
     env:
       ENABLE_USERNS_REMAP: ${{ inputs.ENABLE_USERNS_REMAP || github.event.inputs.ENABLE_USERNS_REMAP || 'false' }}
       RUN_INSPEC: ${{ inputs.RUN_INSPEC || github.event.inputs.RUN_INSPEC || 'true' }}
@@ -45,101 +53,69 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate deploy secrets
+      - name: Check deploy secrets are present
         env:
-          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          HOST: ${{ secrets.DEPLOYMENT_SERVER }}
+          USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          if [ -z "$DEPLOYMENT_SERVER" ]; then
-            echo "::error::DEPLOYMENT_SERVER secret is empty"
+          if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$KEY" ]; then
+            echo "❌ DEPLOYMENT_SERVER / DEPLOY_USER / DEPLOY_SSH_KEY is empty"
+            echo "Add them under Settings → Environments → deployment"
             exit 1
           fi
-          if [ -z "$DEPLOY_USER" ]; then
-            echo "::error::DEPLOY_USER secret is empty"
-            exit 1
-          fi
-          if [ -z "$DEPLOY_SSH_KEY" ]; then
-            echo "::error::DEPLOY_SSH_KEY secret is empty"
-            exit 1
-          fi
-          echo "Target host: $DEPLOYMENT_SERVER"
-          echo "Target user: $DEPLOY_USER"
+          echo "✅ Deploy secrets present (key length ${#KEY})"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.1
         with:
-          python-version: "3.12"
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Add host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.DEPLOYMENT_SERVER }}" >> ~/.ssh/known_hosts
 
       - name: Install Ansible
         run: |
-          pip install ansible-core
-          ansible-galaxy collection install community.general ansible.posix
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ansible
 
-      - name: Setup SSH key
-        env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      - name: Create inventory
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOYMENT_SERVER" >> ~/.ssh/known_hosts 2>/dev/null || true
-
-      - name: Write Ansible inventory
-        env:
-          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          cat > /tmp/inventory.ini <<EOF
-          [targets]
-          ${DEPLOYMENT_SERVER} ansible_user=${DEPLOY_USER} ansible_ssh_private_key_file=~/.ssh/deploy_key ansible_python_interpreter=/usr/bin/python3
+          cat > inventory.ini << EOF
+          [prod]
+          ${{ secrets.DEPLOYMENT_SERVER }} ansible_user=${{ secrets.DEPLOY_USER }} ansible_ssh_common_args='-o StrictHostKeyChecking=yes' ansible_python_interpreter=/usr/bin/python3
           EOF
-          echo "Inventory:"
-          cat /tmp/inventory.ini
+          cat inventory.ini
 
       - name: Harden Docker to CIS controls
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "False"
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          ansible-playbook Infrastructure/Ansible/harden-docker-cis.yml \
-            -i /tmp/inventory.ini \
-            -e "trusted_docker_users=['${DEPLOY_USER}']" \
+          ansible-playbook -i inventory.ini Infrastructure/Ansible/harden-docker-cis.yml \
+            -e "trusted_docker_users=['${{ secrets.DEPLOY_USER }}']" \
             -e "enable_userns_remap=${ENABLE_USERNS_REMAP}"
 
       - name: Install InSpec
         if: env.RUN_INSPEC == 'true'
+        env:
+          CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
-          curl -L https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
+          curl -fsSL https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
+          inspec version
 
       - name: Run CIS Docker InSpec profile
         if: env.RUN_INSPEC == 'true'
         env:
-          DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
-          export CHEF_LICENSE=accept-no-persist
-
-          EXTRA_ARGS=()
-          if [ -n "${CHEF_LICENSE_KEY:-}" ] && [ "${#CHEF_LICENSE_KEY}" -ge 20 ]; then
-            EXTRA_ARGS+=(--chef-license-key "$CHEF_LICENSE_KEY")
-          else
-            echo "CHEF_LICENSE_KEY not set or invalid length — running without --chef-license-key"
-          fi
-
           inspec exec https://github.com/StevenKitavi/compliance-as-code.git \
-            -t "ssh://${DEPLOY_USER}@${DEPLOYMENT_SERVER}" \
-            -i ~/.ssh/deploy_key \
-            --reporter cli json:cis-docker-results.json \
-            "${EXTRA_ARGS[@]}" \
+            -t "ssh://${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOYMENT_SERVER }}" \
+            --chef-license accept \
+            --reporter html:cis-docker-results.html cli \
             || true
 
-      - name: Upload InSpec results
-        if: env.RUN_INSPEC == 'true'
+      - name: Upload InSpec report
+        if: always() && env.RUN_INSPEC == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: cis-docker-results
-          path: cis-docker-results.json
-          if-no-files-found: ignore
+          name: inspec-cis
