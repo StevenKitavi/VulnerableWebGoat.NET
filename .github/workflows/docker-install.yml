@@ -14,13 +14,34 @@ on:
         required: false
         default: "true"
 
+  workflow_call:
+    inputs:
+      DEPLOYMENT_SERVER:
+        description: "Server IP or hostname"
+        required: true
+        type: string
+      DEPLOY_USER:
+        description: "SSH user"
+        required: true
+        type: string
+      RUN_INSPEC:
+        description: "Run InSpec CIS scan after install (true/false)"
+        required: false
+        type: string
+        default: "true"
+    secrets:
+      DEPLOY_SSH_KEY:
+        required: true
+      CHEF_LICENSE_KEY:
+        required: false
+
 jobs:
   install-docker:
     runs-on: ubuntu-latest
     env:
-      DEPLOYMENT_SERVER: ${{ github.event.inputs.DEPLOYMENT_SERVER }}
-      DEPLOY_USER: ${{ github.event.inputs.DEPLOY_USER }}
-      RUN_INSPEC: ${{ github.event.inputs.RUN_INSPEC }}
+      DEPLOYMENT_SERVER: ${{ inputs.DEPLOYMENT_SERVER || github.event.inputs.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ inputs.DEPLOY_USER || github.event.inputs.DEPLOY_USER }}
+      RUN_INSPEC: ${{ inputs.RUN_INSPEC || github.event.inputs.RUN_INSPEC || 'true' }}
       CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
 
     steps:

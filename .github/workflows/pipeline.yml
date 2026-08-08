@@ -239,7 +239,7 @@ jobs:
           echo "✅ SLSA / artifact attestation verified"
 
   # =================================================
-  # Stage 9a: Infrastructure Hardening
+  # Stage 9a: Infrastructure Hardening (Linux baseline)
   # =================================================
   infrastructure-hardening:
     name: "9a. Infrastructure-Hardening"
@@ -253,12 +253,47 @@ jobs:
       CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
 
   # =================================================
+  # Stage 9a-i: Docker Install (pure / non-CIS)
+  # After Linux InSpec baseline
+  # =================================================
+  docker-install:
+    name: "9a-i. Docker Install (Pure)"
+    needs: [infrastructure-hardening]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/docker-install.yml
+    with:
+      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      RUN_INSPEC: "true"
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
+
+  # =================================================
+  # Stage 9a-ii: Docker CIS Harden
+  # After pure Docker install
+  # =================================================
+  docker-cis-harden:
+    name: "9a-ii. Docker CIS Harden"
+    needs: [docker-install]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/docker-cis-harden.yml
+    with:
+      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      ENABLE_USERNS_REMAP: "false"
+      RUN_INSPEC: "true"
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
+
+  # =================================================
   # Stage 9: Deploy
   # =================================================
   deploy:
     name: "9. Deploy"
     runs-on: ubuntu-latest
-    needs: [trivy, verify, syft, infrastructure-hardening]
+    needs: [trivy, verify, syft, infrastructure-hardening, docker-install, docker-cis-harden]
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     environment: deployment
     steps:
@@ -272,4 +307,5 @@ jobs:
           echo "• Syft    → SBOM"
           echo "• Cosign  → Signature verified"
           echo "• SLSA    → Provenance verified"
-          echo "• Hardening → Fail2ban + InSpec"
+          echo "• Hardening → Linux baseline (InSpec)"
+          echo "• Docker  → Pure install + CIS harden + InSpec"
