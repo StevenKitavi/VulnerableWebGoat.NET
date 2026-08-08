@@ -1,0 +1,80 @@
+name: Trivy SCA
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: "Path to scan (filesystem)"
+        required: false
+        type: string
+        default: "."
+      severity:
+        description: "Severity filter"
+        required: false
+        type: string
+        default: "CRITICAL,HIGH"
+      exit-code:
+        description: "Trivy exit code on findings (0 = never fail the job)"
+        required: false
+        type: string
+        default: "0"
+      ignore-unfixed:
+        description: "Ignore vulnerabilities with no fix"
+        required: false
+        type: string
+        default: "true"
+
+  workflow_dispatch:
+    inputs:
+      path:
+        description: "Path to scan (filesystem)"
+        required: false
+        default: "."
+      severity:
+        description: "Severity filter"
+        required: false
+        default: "CRITICAL,HIGH"
+      exit-code:
+        description: "Trivy exit code on findings (0 = never fail the job)"
+        required: false
+        default: "0"
+
+jobs:
+  trivy-sca:
+    name: Trivy filesystem SCA
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem / dependency scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: "fs"
+          scan-ref: ${{ inputs.path || github.event.inputs.path || '.' }}
+          severity: ${{ inputs.severity || github.event.inputs.severity || 'CRITICAL,HIGH' }}
+          format: "sarif"
+          output: "trivy-sca-results.sarif"
+          exit-code: ${{ inputs.exit-code || github.event.inputs.exit-code || '0' }}
+          ignore-unfixed: ${{ inputs.ignore-unfixed || 'true' }}
+
+      - name: Upload Trivy SCA SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: trivy-sca-results.sarif
+          category: trivy-sca
+
+      - name: Upload Trivy SCA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sca-results
+          path: trivy-sca-results.sarif
+          retention-days: 30
+          if-no-files-found: ignore

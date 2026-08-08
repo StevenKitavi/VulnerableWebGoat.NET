@@ -103,7 +103,21 @@ jobs:
     permissions:
       contents: read
       security-events: write
-
+  # =================================================
+  # Stage 1c: Dependency SCA (Trivy) — parallel with Grype
+  # =================================================
+  trivy-sca:
+    name: "1c. Trivy SCA"
+    needs: build
+    uses: ./.github/workflows/trivy-sca.yml
+    secrets: inherit
+    with:
+      path: "."
+      severity: "CRITICAL,HIGH"
+      exit-code: "0"
+    permissions:
+      contents: read
+      security-events: write
   # =================================================
   # Stage 2: Test
   # =================================================
@@ -148,7 +162,7 @@ jobs:
   # =================================================
   docker:
     name: "4. Docker Build"
-    needs: [build, test, codeql, grype]
+    needs: [build, test, codeql, grype, trivy-sca]
     uses: ./.github/workflows/dotnet.yml
     secrets: inherit
     permissions:
@@ -281,7 +295,7 @@ jobs:
           gh attestation verify "$OCI_REF" --repo "${{ github.repository }}"
           echo "✅ SLSA / artifact attestation verified"
 
-          
+
   # =================================================
   # Stage 9: Deploy
   # Waits for image path + full infra path
