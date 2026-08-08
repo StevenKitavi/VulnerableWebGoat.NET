@@ -70,16 +70,17 @@ jobs:
       # ---------- Fail2ban ----------
       - name: Run Fail2ban playbook
         run: |
-          ansible-playbook -i inventory.ini .github/ansible/fail2ban.yml
+          ansible-playbook -i inventory.ini Infrastructure/Ansible/fail2ban.yml
 
-      # ---------- devsec.hardening ----------
+
+      # ---------- devsec.hardening requires the devsec playbook----------
       - name: Install devsec.hardening collection
         run: ansible-galaxy collection install devsec.hardening
 
       - name: Run OS hardening playbook
         run: |
           if [ -f .github/ansible/ansible-hardening.yml ]; then
-            ansible-playbook -i inventory.ini .github/ansible/ansible-hardening.yml
+            ansible-playbook -i inventory.ini Infrastructure/Ansible/ansible-hardening.yml
           else
             cat > /tmp/os-hardening.yml << 'PLAY'
           ---
@@ -91,6 +92,7 @@ jobs:
             roles:
               - role: devsec.hardening.os_hardening
           PLAY
+          
             ansible-playbook -i inventory.ini /tmp/os-hardening.yml
           fi
 
