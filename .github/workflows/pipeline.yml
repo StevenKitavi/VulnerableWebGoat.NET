@@ -45,6 +45,49 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
   # =================================================
+  # Stage 9a: Infrastructure Hardening
+  # Starts with build (after secrets) — runs in parallel
+  # =================================================
+  infrastructure-hardening:
+    name: "9a. Infrastructure-Hardening"
+    needs: [secrets]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/infrastructure-hardening.yml
+    secrets:
+      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
+
+  # =================================================
+  # Stage 9a-i: Docker Install (Pure)
+  # =================================================
+  docker-install:
+    name: "9a-i. Docker Install (Pure)"
+    needs: [infrastructure-hardening]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/docker-install.yml
+    secrets:
+      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
+
+  # =================================================
+  # Stage 9a-ii: Docker CIS Harden
+  # =================================================
+  docker-cis-harden:
+    name: "9a-ii. Docker CIS Harden"
+    needs: [docker-install]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/docker-cis-harden.yml
+    secrets:
+      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
+
+  # =================================================
   # Stage 1b: Dependency SCA
   # =================================================
   grype:
@@ -239,54 +282,19 @@ jobs:
           echo "✅ SLSA / artifact attestation verified"
 
   # =================================================
-  # Stage 9a: Infrastructure Hardening (Linux baseline)
-  # =================================================
-  infrastructure-hardening:
-    name: "9a. Infrastructure-Hardening"
-    needs: [trivy, verify, syft]
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/infrastructure-hardening.yml
-    secrets:
-      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
-
-  # =================================================
-  # Stage 9a-i: Docker Install (Pure)
-  # =================================================
-  docker-install:
-    name: "9a-i. Docker Install (Pure)"
-    needs: [infrastructure-hardening]
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/docker-install.yml
-    secrets:
-      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
-
-  # =================================================
-  # Stage 9a-ii: Docker CIS Harden
-  # =================================================
-  docker-cis-harden:
-    name: "9a-ii. Docker CIS Harden"
-    needs: [docker-install]
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/docker-cis-harden.yml
-    secrets:
-      DEPLOYMENT_SERVER: ${{ secrets.DEPLOYMENT_SERVER }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
-
-  # =================================================
   # Stage 9: Deploy
+  # Waits for image path + full infra path
   # =================================================
   deploy:
     name: "9. Deploy"
     runs-on: ubuntu-latest
-    needs: [trivy, verify, syft, infrastructure-hardening, docker-install, docker-cis-harden]
+    needs:
+      - trivy
+      - verify
+      - syft
+      - infrastructure-hardening
+      - docker-install
+      - docker-cis-harden
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     environment: deployment
     steps:
@@ -294,11 +302,7 @@ jobs:
         run: |
           echo "Pipeline completed successfully"
           echo "• Secrets → Gitleaks"
-          echo "• Grype   → SCA"
-          echo "• CodeQL  → Code scanning"
-          echo "• Trivy   → Image scan"
-          echo "• Syft    → SBOM"
-          echo "• Cosign  → Signature verified"
-          echo "• SLSA    → Provenance verified"
-          echo "• Hardening → Linux baseline (InSpec)"
-          echo "• Docker  → Pure install + CIS harden + InSpec"
+          echo "• Build / Test / Scans (parallel with infra)"
+          echo "• Infra → OS harden → Docker install → Docker CIS"
+          echo "• Trivy / Syft / Cosign / SLSA / Verify"
+          echo "• Deploy gated on image + infra stages"

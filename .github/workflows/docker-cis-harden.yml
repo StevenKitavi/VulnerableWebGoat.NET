@@ -103,12 +103,17 @@ jobs:
           curl -fsSL https://omnitruck.chef.io/install.sh | sudo bash -s -- -P inspec
           inspec version
 
+      - name: Clone InSpec profile
+        if: env.RUN_INSPEC == 'true'
+        run: |
+          git clone --depth 1 https://github.com/StevenKitavi/compliance-as-code.git /tmp/compliance-as-code
+
       - name: Run CIS Docker InSpec profile
         if: env.RUN_INSPEC == 'true'
         env:
           CHEF_LICENSE_KEY: ${{ secrets.CHEF_LICENSE_KEY }}
         run: |
-          inspec exec https://github.com/StevenKitavi/compliance-as-code.git \
+          inspec exec /tmp/compliance-as-code \
             -t "ssh://${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOYMENT_SERVER }}" \
             --chef-license accept \
             --reporter html:cis-docker-results.html cli \

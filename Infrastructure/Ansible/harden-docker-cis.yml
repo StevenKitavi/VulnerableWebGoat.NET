@@ -1,6 +1,4 @@
 ---
-# harden-docker-cis.yml
-# Applies key CIS Docker Benchmark host + daemon controls
 - name: Harden Docker environment toward CIS compliance
   hosts: all
   become: true
@@ -164,17 +162,13 @@
         state: started
         enabled: true
 
-    - name: Verify daemon configuration loaded
+    - name: Verify Docker is running
       ansible.builtin.command: docker info
-      register: docker_info_after
       changed_when: false
-      failed_when: docker_info_after.rc != 0
 
-    - name: Show key security-related docker info
+    - name: Hardening complete
       ansible.builtin.debug:
-        msg:
-          - "Hardening applied. Review docker info / daemon.json."
-          - "Remember: full CIS compliance also requires image hygiene and per-container runtime controls."
+        msg: "Docker CIS hardening applied."
 
   handlers:
     - name: Restart Docker
