@@ -8,7 +8,7 @@ WORKDIR ./sources/WebGoat.NET
 RUN dotnet publish -c release -o /app 
 
 # final stage/image
-FROM mcr.microsoft.com/dotnet/aspnet:8.0@sha256:fd7596eaea7ad453fe7ac16724a3c9ae36edcda894ba13743d6a5c83d6a3b36d
+FROM mcr.microsoft.com/dotnet/aspnet:9.0@sha256:4e376dd15bbc8437d4892367ab0ea06a3ac9fea482d10f92f3c493fe1a2219ad
 WORKDIR /app
 COPY --from=build /app ./
 
