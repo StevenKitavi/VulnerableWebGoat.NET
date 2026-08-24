@@ -1,5 +1,5 @@
 # https://hub.docker.com/_/microsoft-dotnet
-FROM mcr.microsoft.com/dotnet/sdk:8.0@sha256:e2f26f26169fd10d6f1b426e01c97397717b32e9d5ab4ee4a7d5497ed9403007 AS build
+FROM mcr.microsoft.com/dotnet/sdk:9.0@sha256:35048e3a81e6a07c316e7bbbd80d80d2ba705fe5f23a8ed42b6638c8f4c20d30 AS build
 WORKDIR ./sources
 
 # copy everything else and build app
@@ -8,7 +8,7 @@ WORKDIR ./sources/WebGoat.NET
 RUN dotnet publish -c release -o /app 
 
 # final stage/image
-FROM mcr.microsoft.com/dotnet/aspnet:8.0@sha256:fd7596eaea7ad453fe7ac16724a3c9ae36edcda894ba13743d6a5c83d6a3b36d
+FROM mcr.microsoft.com/dotnet/aspnet:9.0@sha256:4e376dd15bbc8437d4892367ab0ea06a3ac9fea482d10f92f3c493fe1a2219ad
 WORKDIR /app
 COPY --from=build /app ./
 

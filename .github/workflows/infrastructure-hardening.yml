@@ -18,6 +18,9 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   harden:
     name: Ansible + InSpec hardening
@@ -27,8 +30,13 @@ jobs:
     continue-on-error: true
 
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check deploy secrets are present
         env:
@@ -45,7 +53,7 @@ jobs:
 
       # ---------- SSH (unencrypted deploy key) ----------
       - name: Setup SSH agent
-        uses: webfactory/ssh-agent@v0.9.1
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
@@ -119,7 +127,7 @@ jobs:
 
       - name: Upload InSpec report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: inspec-linux-baseline
           path: linux-baseline.html
