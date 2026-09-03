@@ -1,87 +1,68 @@
-# For most projects, this workflow file will not need changing; you simply need
-# to commit it to your repository.
-#
-# You may wish to alter this file to override the set of languages analyzed,
-# or to provide custom queries or build logic.
-#
-name: "CodeQL Advanced"
+name: "CodeQL"
 
 on:
+  # Makes this workflow callable from other workflows (e.g. pipeline.yml)
+  workflow_call:
+
+  # Still allows it to run on its own if needed
   push:
-    branches: [ "master" ]
+    branches: [ "master", "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "master", "main" ]
   schedule:
-    - cron: '16 15 * * 2'
-  workflow_dispatch:          # Allows manual trigger from the Actions tab
+    - cron: '0 6 * * 1'          # Every Monday 06:00 UTC
+  workflow_dispatch:              # Manual trigger
+
+permissions:
+  contents: read
 
 jobs:
   analyze:
-    name: Analyze (${{ matrix.language }})
-    runs-on: ${{ (matrix.language == 'swift' && 'macos-latest') || 'ubuntu-latest' }}
+    name: Analyze (csharp)
+    runs-on: ubuntu-latest
     timeout-minutes: 360
-    permissions:
-      # required for all workflows
-      security-events: write
 
-      # required to fetch internal or private CodeQL packs
+    permissions:
+      security-events: write      # Required to upload SARIF → Security tab
+      contents: read
+      actions: read
       packages: read
 
-      # only required for workflows in private repositories
-      actions: read
-      contents: read
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # ===== C# (main language you are testing) =====
-          - language: csharp
-            build-mode: autobuild   # change to "manual" if autobuild fails
-
-          # ===== Optional: keep only the languages you actually need =====
-          # - language: javascript-typescript
-          #   build-mode: none
-          # - language: actions
-          #   build-mode: none
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4   # or @v7 if you prefer the newest
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: audit
 
-      # Setup .NET (recommended for C#)
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Setup .NET
-        if: matrix.language == 'csharp'
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
             8.0.x
             9.0.x
 
-      # Initializes the CodeQL tools for scanning.
+      # 1. Initialize CodeQL
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3   # or @v4
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-          # Optional: use a broader query suite
-          # queries: security-and-quality
-          # queries: security-extended
+          languages: csharp
+          queries: security-and-quality
 
-      # ---------------------------------------------------------------
-      # Build step – only runs when build-mode is set to "manual"
-      # ---------------------------------------------------------------
-      - name: Manual build (C#)
-        if: matrix.build-mode == 'manual' && matrix.language == 'csharp'
-        shell: bash
-        run: |
-          echo "Running manual build for C#"
-          dotnet restore
-          dotnet build --configuration Release --no-restore
+      # 2. Build (creates the database)
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
 
-      # If you ever set other languages to "manual", add their build commands here
+      # If Autobuild fails, replace the step above with this:
+      # - name: Manual build
+      #   run: |
+      #     dotnet restore
+      #     dotnet build --configuration Release --no-restore
 
+      # 3. Analyze + Upload SARIF to GitHub Security tab
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3   # or @v4
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
-          category: "/language:${{ matrix.language }}"
+          category: "/language:csharp"
