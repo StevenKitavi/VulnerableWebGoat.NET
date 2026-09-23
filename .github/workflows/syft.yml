@@ -56,7 +56,7 @@ jobs:
           docker images
 
       - name: Install Syft
-        uses: anchore/sbom-action/download-syft@9246b90769f852b3a8921f330c59e0b3f439d6e9 # v0.20.1
+        uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
 
       - name: Generate SBOM (SPDX JSON)
         run: |
