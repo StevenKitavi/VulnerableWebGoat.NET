@@ -1,0 +1,113 @@
+---
+- name: Create GPO to disable LLMNR/NBT-NS and require SMB signing
+  hosts: domain_controllers   # or host with GroupPolicy module + domain admin rights
+  gather_facts: false
+  vars:
+    gpo_name: "Harden-Disable-LLMNR-NBTNS-Enable-SMB-Signing"
+    gpo_comment: "Disables LLMNR and NBT-NS; requires SMB signing"
+    # Admin should Change this to actual target OU or domain DN
+    target_dn: "DC=example,DC=com"
+
+  tasks:
+    - name: Import GroupPolicy module and verify
+      ansible.windows.win_powershell:
+        script: |
+          if (-not (Get-Module -ListAvailable -Name GroupPolicy)) {
+            throw "GroupPolicy module not available. Run this on a Domain Controller or install RSAT."
+          }
+          Import-Module GroupPolicy -ErrorAction Stop
+          Write-Output "GroupPolicy module loaded"
+
+    - name: Create GPO if it does not exist
+      ansible.windows.win_powershell:
+        script: |
+          $name = "{{ gpo_name }}"
+          $gpo = Get-GPO -Name $name -ErrorAction SilentlyContinue
+          if (-not $gpo) {
+            New-GPO -Name $name -Comment "{{ gpo_comment }}" | Out-Null
+            Write-Output "Created GPO: $name"
+          } else {
+            Write-Output "GPO already exists: $name"
+          }
+
+    # ---------- LLMNR ----------
+    - name: Disable LLMNR (EnableMulticast = 0)
+      ansible.windows.win_powershell:
+        script: |
+          Set-GPRegistryValue -Name "{{ gpo_name }}" `
+            -Key "HKLM\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" `
+            -ValueName "EnableMulticast" `
+            -Type DWord `
+            -Value 0
+          Write-Output "LLMNR disabled"
+
+    # ---------- NBT-NS ----------
+    - name: Disable NBT-NS name resolution (EnableNetbios = 0)
+      ansible.windows.win_powershell:
+        script: |
+          Set-GPRegistryValue -Name "{{ gpo_name }}" `
+            -Key "HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters" `
+            -ValueName "EnableNetbios" `
+            -Type DWord `
+            -Value 0
+          Write-Output "NBT-NS name resolution disabled"
+
+    # ---------- SMB Signing (Require) ----------
+    - name: Require SMB signing on client (LanmanWorkstation)
+      ansible.windows.win_powershell:
+        script: |
+          Set-GPRegistryValue -Name "{{ gpo_name }}" `
+            -Key "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" `
+            -ValueName "RequireSecuritySignature" `
+            -Type DWord `
+            -Value 1
+          Write-Output "SMB client signing required"
+
+    - name: Require SMB signing on server (LanmanServer)
+      ansible.windows.win_powershell:
+        script: |
+          Set-GPRegistryValue -Name "{{ gpo_name }}" `
+            -Key "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" `
+            -ValueName "RequireSecuritySignature" `
+            -Type DWord `
+            -Value 1
+          Write-Output "SMB server signing required"
+
+    # Optional (mostly for SMB1 compatibility / auditor satisfaction)
+    - name: Enable SMB signing negotiation on client (optional)
+      ansible.windows.win_powershell:
+        script: |
+          Set-GPRegistryValue -Name "{{ gpo_name }}" `
+            -Key "HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" `
+            -ValueName "EnableSecuritySignature" `
+            -Type DWord `
+            -Value 1
+
+    - name: Enable SMB signing negotiation on server (optional)
+      ansible.windows.win_powershell:
+        script: |
+          Set-GPRegistryValue -Name "{{ gpo_name }}" `
+            -Key "HKLM\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" `
+            -ValueName "EnableSecuritySignature" `
+            -Type DWord `
+            -Value 1
+
+    - name: Link GPO to target (idempotent)
+      ansible.windows.win_powershell:
+        script: |
+          $links = Get-GPInheritance -Target "{{ target_dn }}" -ErrorAction SilentlyContinue
+          $alreadyLinked = $links.GpoLinks | Where-Object { $_.DisplayName -eq "{{ gpo_name }}" }
+          if (-not $alreadyLinked) {
+            New-GPLink -Name "{{ gpo_name }}" -Target "{{ target_dn }}" -LinkEnabled Yes | Out-Null
+            Write-Output "Linked GPO to {{ target_dn }}"
+          } else {
+            Write-Output "GPO already linked to {{ target_dn }}"
+          }
+
+    - name: Show GPO summary
+      ansible.windows.win_powershell:
+        script: |
+          Get-GPO -Name "{{ gpo_name }}" | Select-Object DisplayName, Id, CreationTime, ModificationTime | Format-List | Out-String
+          Write-Output "--- Registry settings ---"
+          Get-GPRegistryValue -Name "{{ gpo_name }}" -ErrorAction SilentlyContinue |
+            Format-Table Key, ValueName, Value, Type -AutoSize | Out-String

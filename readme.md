@@ -119,3 +119,13 @@ The WebGoat.NET projects ships with scripts that allow you to conveniently run t
 2. Educational documents/trainings for any categories of the latest OWASP Top 10 are not available.
 
 
+# Verification after gpupdate /force (and preferably a reboot):
+powershell
+Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name RequireSecuritySignature
+Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters" -Name RequireSecuritySignature
+# or
+Get-SmbClientConfiguration | Select RequireSecuritySignature
+Get-SmbServerConfiguration | Select RequireSecuritySignature
+Both values should be 1 / True.
+Legacy devices (very old printers, scanners, thin clients, etc.) that do not support SMB signing will break when signing is required. Test in a pilot OU first.
+The two optional EnableSecuritySignature tasks can be removed if you only care about modern SMB2/SMB3.
